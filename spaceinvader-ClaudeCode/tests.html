@@ -1,0 +1,498 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8">
+  <title>Space Invaders — Tests</title>
+  <style>
+    body { font-family: monospace; background: #111; color: #eee; padding: 20px; }
+    h1 { color: #fff; }
+    h2 { color: #aaa; margin-top: 24px; }
+    .pass { color: #0f0; }
+    .fail { color: #f00; font-weight: bold; }
+    .summary { margin-top: 20px; font-size: 18px; padding: 10px; border-top: 1px solid #444; }
+  </style>
+</head>
+<body>
+  <h1>Space Invaders — Tests</h1>
+  <canvas id="gameCanvas" width="800" height="600" style="display:none"></canvas>
+  <div id="results"></div>
+
+  <script src="src/utils.js"></script>
+  <script src="src/player.js"></script>
+  <script src="src/enemies.js"></script>
+  <script src="src/game.js"></script>
+  <script>
+    // ========================================
+    // Mini-framework de test vanilla
+    // ========================================
+    const results = document.getElementById('results');
+    let totalPass = 0;
+    let totalFail = 0;
+    let currentGroup = '';
+
+    /**
+     * Démarre un groupe de tests.
+     * @param {string} name - Nom du groupe
+     */
+    function describe(name) {
+      currentGroup = name;
+      const h2 = document.createElement('h2');
+      h2.textContent = name;
+      results.appendChild(h2);
+    }
+
+    /**
+     * Exécute un test unitaire.
+     * @param {string} label - Description du test
+     * @param {Function} fn - Fonction de test (doit throw si échec)
+     */
+    function test(label, fn) {
+      const div = document.createElement('div');
+      try {
+        fn();
+        totalPass++;
+        div.className = 'pass';
+        div.textContent = `  ✓ ${label}`;
+      } catch (e) {
+        totalFail++;
+        div.className = 'fail';
+        div.textContent = `  ✗ ${label} — ${e.message}`;
+      }
+      results.appendChild(div);
+    }
+
+    /**
+     * Assertion : vérifie que deux valeurs sont strictement égales.
+     */
+    function assertEqual(actual, expected, msg = '') {
+      if (actual !== expected) {
+        throw new Error(`${msg} attendu ${expected}, reçu ${actual}`);
+      }
+    }
+
+    /**
+     * Assertion : vérifie qu'une valeur est true.
+     */
+    function assertTrue(value, msg = '') {
+      if (value !== true) {
+        throw new Error(`${msg} attendu true, reçu ${value}`);
+      }
+    }
+
+    /**
+     * Assertion : vérifie qu'une valeur est false.
+     */
+    function assertFalse(value, msg = '') {
+      if (value !== false) {
+        throw new Error(`${msg} attendu false, reçu ${value}`);
+      }
+    }
+
+    // ========================================
+    // Tests utils.js
+    // ========================================
+    describe('utils.js — rectCollision');
+
+    test('collision entre deux rectangles qui se chevauchent', () => {
+      const a = { x: 0, y: 0, width: 20, height: 20 };
+      const b = { x: 10, y: 10, width: 20, height: 20 };
+      assertTrue(rectCollision(a, b));
+    });
+
+    test('pas de collision entre deux rectangles éloignés', () => {
+      const a = { x: 0, y: 0, width: 10, height: 10 };
+      const b = { x: 50, y: 50, width: 10, height: 10 };
+      assertFalse(rectCollision(a, b));
+    });
+
+    test('pas de collision quand les bords se touchent exactement', () => {
+      const a = { x: 0, y: 0, width: 10, height: 10 };
+      const b = { x: 10, y: 0, width: 10, height: 10 };
+      assertFalse(rectCollision(a, b));
+    });
+
+    describe('utils.js — clamp');
+
+    test('clamp retourne la valeur si entre min et max', () => {
+      assertEqual(clamp(5, 0, 10), 5);
+    });
+
+    test('clamp retourne min si valeur trop basse', () => {
+      assertEqual(clamp(-5, 0, 10), 0);
+    });
+
+    test('clamp retourne max si valeur trop haute', () => {
+      assertEqual(clamp(15, 0, 10), 10);
+    });
+
+    describe('utils.js — randomInt');
+
+    test('randomInt retourne une valeur entre min et max', () => {
+      for (let i = 0; i < 100; i++) {
+        const val = randomInt(3, 7);
+        assertTrue(val >= 3 && val <= 7, `${val} hors bornes`);
+      }
+    });
+
+    describe('utils.js — constantes');
+
+    test('CANVAS_WIDTH vaut 800', () => {
+      assertEqual(CANVAS_WIDTH, 800);
+    });
+
+    test('CANVAS_HEIGHT vaut 600', () => {
+      assertEqual(CANVAS_HEIGHT, 600);
+    });
+
+    // ========================================
+    // Tests player.js
+    // ========================================
+    describe('player.js — initialisation');
+
+    test('le joueur démarre centré horizontalement', () => {
+      const p = new Player();
+      assertEqual(p.x, CANVAS_WIDTH / 2 - p.width / 2);
+    });
+
+    test('le joueur a 3 vies', () => {
+      const p = new Player();
+      assertEqual(p.lives, 3);
+    });
+
+    test('pas de missile au départ', () => {
+      const p = new Player();
+      assertEqual(p.missile, null);
+    });
+
+    describe('player.js — déplacement');
+
+    test('moveLeft diminue x de 5', () => {
+      const p = new Player();
+      const startX = p.x;
+      p.moveLeft();
+      assertEqual(p.x, startX - 5);
+    });
+
+    test('moveRight augmente x de 5', () => {
+      const p = new Player();
+      const startX = p.x;
+      p.moveRight();
+      assertEqual(p.x, startX + 5);
+    });
+
+    test('le joueur ne sort pas du canvas à gauche', () => {
+      const p = new Player();
+      p.x = 2;
+      p.moveLeft();
+      assertEqual(p.x, 0);
+    });
+
+    test('le joueur ne sort pas du canvas à droite', () => {
+      const p = new Player();
+      p.x = CANVAS_WIDTH - p.width - 2;
+      p.moveRight();
+      assertEqual(p.x, CANVAS_WIDTH - p.width);
+    });
+
+    describe('player.js — tir');
+
+    test('shoot crée un missile', () => {
+      const p = new Player();
+      p.shoot();
+      assertTrue(p.missile !== null);
+    });
+
+    test('un seul missile à la fois', () => {
+      const p = new Player();
+      p.shoot();
+      const first = p.missile;
+      p.shoot();
+      assertTrue(p.missile === first, 'le missile ne doit pas changer');
+    });
+
+    test('le missile monte de 8px par update', () => {
+      const p = new Player();
+      p.shoot();
+      const startY = p.missile.y;
+      p.updateMissile();
+      assertEqual(p.missile.y, startY - 8);
+    });
+
+    test('le missile disparaît quand il sort du canvas', () => {
+      const p = new Player();
+      p.shoot();
+      p.missile.y = 5;
+      // Assez d'updates pour sortir
+      for (let i = 0; i < 5; i++) p.updateMissile();
+      assertEqual(p.missile, null);
+    });
+
+    describe('player.js — vies');
+
+    test('hit retire une vie', () => {
+      const p = new Player();
+      p.hit();
+      assertEqual(p.lives, 2);
+    });
+
+    test('hit retourne true tant que des vies restent', () => {
+      const p = new Player();
+      assertTrue(p.hit());
+      assertEqual(p.lives, 2);
+    });
+
+    test('hit retourne false à 0 vies', () => {
+      const p = new Player();
+      p.hit();
+      p.hit();
+      assertFalse(p.hit());
+      assertEqual(p.lives, 0);
+    });
+
+    describe('player.js — reset');
+
+    test('reset remet le joueur à son état initial', () => {
+      const p = new Player();
+      p.x = 100;
+      p.lives = 1;
+      p.shoot();
+      p.reset();
+      assertEqual(p.x, CANVAS_WIDTH / 2 - p.width / 2);
+      assertEqual(p.lives, 3);
+      assertEqual(p.missile, null);
+    });
+
+    // ========================================
+    // Tests enemies.js
+    // ========================================
+    describe('enemies.js — formation initiale');
+
+    test('15 ennemis créés (5×3)', () => {
+      const grid = new EnemyGrid();
+      assertEqual(grid.enemies.length, 15);
+    });
+
+    test('tous les ennemis sont vivants au départ', () => {
+      const grid = new EnemyGrid();
+      assertEqual(grid.aliveEnemies().length, 15);
+    });
+
+    test('5 ennemis de type A (ligne 1)', () => {
+      const grid = new EnemyGrid();
+      const typeA = grid.enemies.filter(e => e.type === 'A');
+      assertEqual(typeA.length, 5);
+    });
+
+    test('5 ennemis de type B (ligne 2)', () => {
+      const grid = new EnemyGrid();
+      const typeB = grid.enemies.filter(e => e.type === 'B');
+      assertEqual(typeB.length, 5);
+    });
+
+    test('5 ennemis de type C (ligne 3)', () => {
+      const grid = new EnemyGrid();
+      const typeC = grid.enemies.filter(e => e.type === 'C');
+      assertEqual(typeC.length, 5);
+    });
+
+    describe('enemies.js — points par type');
+
+    test('type A vaut 30 points', () => {
+      const e = new Enemy(0, 0, 'A');
+      assertEqual(e.points, 30);
+    });
+
+    test('type B vaut 20 points', () => {
+      const e = new Enemy(0, 0, 'B');
+      assertEqual(e.points, 20);
+    });
+
+    test('type C vaut 10 points', () => {
+      const e = new Enemy(0, 0, 'C');
+      assertEqual(e.points, 10);
+    });
+
+    describe('enemies.js — déplacement');
+
+    test('les ennemis se déplacent latéralement', () => {
+      const grid = new EnemyGrid();
+      const startX = grid.enemies[0].x;
+      grid.update();
+      assertEqual(grid.enemies[0].x, startX + grid.speed * grid.direction);
+    });
+
+    test('la vitesse augmente quand un ennemi est détruit', () => {
+      const grid = new EnemyGrid();
+      const initialSpeed = grid.speed;
+      grid.enemies[0].alive = false;
+      grid.increaseSpeed();
+      assertTrue(grid.speed > initialSpeed);
+    });
+
+    describe('enemies.js — tir ennemi');
+
+    test('pas de tir avant 2 secondes', () => {
+      const grid = new EnemyGrid();
+      grid.shoot(500);
+      assertEqual(grid.missiles.length, 0);
+    });
+
+    test('tir après 2 secondes', () => {
+      const grid = new EnemyGrid();
+      grid.lastShotTime = 0;
+      grid.shoot(2500);
+      assertEqual(grid.missiles.length, 1);
+    });
+
+    test('le missile ennemi descend de 4px', () => {
+      const grid = new EnemyGrid();
+      grid.lastShotTime = 0;
+      grid.shoot(2500);
+      const startY = grid.missiles[0].y;
+      grid.updateMissiles();
+      assertEqual(grid.missiles[0].y, startY + 4);
+    });
+
+    describe('enemies.js — reachedPlayer');
+
+    test('retourne false quand les ennemis sont en haut', () => {
+      const grid = new EnemyGrid();
+      assertFalse(grid.reachedPlayer(550));
+    });
+
+    test('retourne true quand un ennemi atteint le joueur', () => {
+      const grid = new EnemyGrid();
+      grid.enemies[0].y = 540;
+      assertTrue(grid.reachedPlayer(550));
+    });
+
+    describe('enemies.js — reset');
+
+    test('reset recrée 15 ennemis vivants', () => {
+      const grid = new EnemyGrid();
+      grid.enemies[0].alive = false;
+      grid.enemies[1].alive = false;
+      grid.reset();
+      assertEqual(grid.aliveEnemies().length, 15);
+    });
+
+    // ========================================
+    // Tests game.js
+    // ========================================
+    describe('game.js — initialisation');
+
+    test('le jeu démarre en état start', () => {
+      const canvas = document.getElementById('gameCanvas');
+      const g = new Game(canvas);
+      assertEqual(g.state, 'start');
+      cancelAnimationFrame(g.animationId);
+    });
+
+    test('le score est 0 au départ', () => {
+      const canvas = document.getElementById('gameCanvas');
+      const g = new Game(canvas);
+      assertEqual(g.score, 0);
+      cancelAnimationFrame(g.animationId);
+    });
+
+    describe('game.js — collisions');
+
+    test('missile joueur détruit un ennemi et ajoute le score', () => {
+      const canvas = document.getElementById('gameCanvas');
+      const g = new Game(canvas);
+      g.state = 'playing';
+      // Placer le missile sur le premier ennemi
+      const enemy = g.enemyGrid.enemies[0];
+      g.player.missile = {
+        x: enemy.x + 5,
+        y: enemy.y + 5,
+        width: 4,
+        height: 10
+      };
+      g.checkPlayerMissileHit();
+      assertFalse(enemy.alive);
+      assertEqual(g.score, enemy.points);
+      assertEqual(g.player.missile, null);
+      cancelAnimationFrame(g.animationId);
+    });
+
+    test('missile ennemi retire une vie au joueur', () => {
+      const canvas = document.getElementById('gameCanvas');
+      const g = new Game(canvas);
+      g.state = 'playing';
+      // Placer un missile ennemi sur le joueur
+      g.enemyGrid.missiles.push({
+        x: g.player.x + 5,
+        y: g.player.y + 5,
+        width: 4,
+        height: 10
+      });
+      g.checkEnemyMissileHit();
+      assertEqual(g.player.lives, 2);
+      assertEqual(g.enemyGrid.missiles.length, 0);
+      cancelAnimationFrame(g.animationId);
+    });
+
+    test('game over quand le joueur perd sa dernière vie', () => {
+      const canvas = document.getElementById('gameCanvas');
+      const g = new Game(canvas);
+      g.state = 'playing';
+      g.player.lives = 1;
+      g.enemyGrid.missiles.push({
+        x: g.player.x + 5,
+        y: g.player.y + 5,
+        width: 4,
+        height: 10
+      });
+      g.checkEnemyMissileHit();
+      assertEqual(g.state, 'gameover');
+      cancelAnimationFrame(g.animationId);
+    });
+
+    test('game over quand un ennemi atteint le joueur', () => {
+      const canvas = document.getElementById('gameCanvas');
+      const g = new Game(canvas);
+      g.state = 'playing';
+      g.enemyGrid.enemies[0].y = g.player.y;
+      g.checkEnemyReachedPlayer();
+      assertEqual(g.state, 'gameover');
+      cancelAnimationFrame(g.animationId);
+    });
+
+    describe('game.js — victoire et restart');
+
+    test('victoire quand tous les ennemis sont morts', () => {
+      const canvas = document.getElementById('gameCanvas');
+      const g = new Game(canvas);
+      g.state = 'playing';
+      g.enemyGrid.enemies.forEach(e => e.alive = false);
+      g.update(0);
+      assertEqual(g.state, 'victory');
+      cancelAnimationFrame(g.animationId);
+    });
+
+    test('restart remet le jeu à zéro', () => {
+      const canvas = document.getElementById('gameCanvas');
+      const g = new Game(canvas);
+      g.score = 500;
+      g.player.lives = 1;
+      g.restart();
+      assertEqual(g.score, 0);
+      assertEqual(g.player.lives, 3);
+      assertEqual(g.state, 'playing');
+      assertEqual(g.enemyGrid.aliveEnemies().length, 15);
+      cancelAnimationFrame(g.animationId);
+    });
+
+    // ========================================
+    // Résumé
+    // ========================================
+    const summary = document.createElement('div');
+    summary.className = 'summary';
+    summary.innerHTML = `<br><strong>${totalPass + totalFail} tests</strong> — ` +
+      `<span class="pass">${totalPass} passés</span> — ` +
+      `<span class="${totalFail > 0 ? 'fail' : 'pass'}">${totalFail} échoués</span>`;
+    results.appendChild(summary);
+  </script>
+</body>
+</html>
