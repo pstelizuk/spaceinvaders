@@ -1,0 +1,348 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8">
+  <title>Space Invaders — Tests Visuels</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      background: #0d0d0d;
+      color: #e0e0e0;
+      font-family: 'Courier New', monospace;
+      padding: 16px;
+    }
+    h1 {
+      color: #fff;
+      font-size: 18px;
+      margin-bottom: 12px;
+      letter-spacing: 2px;
+    }
+    canvas {
+      display: block;
+      border: 1px solid #333;
+    }
+    #log-panel {
+      width: 800px;
+      height: 220px;
+      overflow-y: auto;
+      background: #111;
+      border: 1px solid #333;
+      border-top: none;
+      padding: 10px 14px;
+      font-size: 13px;
+      line-height: 1.7;
+    }
+    .log-info         { color: #aaa; }
+    .log-pass         { color: #4cff4c; }
+    .log-fail         { color: #ff4c4c; }
+    .log-title        { color: #ffd700; font-weight: bold; margin-top: 4px; }
+    .log-summary-pass { color: #4cff4c; font-size: 16px; font-weight: bold; margin-top: 8px; }
+    .log-summary-fail { color: #ff4c4c; font-size: 16px; font-weight: bold; margin-top: 8px; }
+  </style>
+</head>
+<body>
+  <h1>SPACE INVADERS — TESTS VISUELS</h1>
+  <canvas id="canvas" width="800" height="600"></canvas>
+  <div id="log-panel"></div>
+
+  <script src="../src/utils.js"></script>
+  <script src="../src/player.js"></script>
+  <script src="../src/enemies.js"></script>
+  <script>
+    class VisualTestRunner {
+      /**
+       * Initialize the test runner
+       */
+      constructor() {
+        this.canvas = document.getElementById('canvas');
+        this.ctx = this.canvas.getContext('2d');
+        this.logPanel = document.getElementById('log-panel');
+        this.assertPassed = 0;
+        this.assertFailed = 0;
+        this.currentTestName = '';
+        this.currentPhase = '';
+      }
+
+      /**
+       * Add a line to the log panel
+       * @param {string} msg - Message to display
+       * @param {string} type - 'info' | 'pass' | 'fail' | 'title' | 'summary-pass' | 'summary-fail'
+       */
+      log(msg, type = 'info') {
+        const div = document.createElement('div');
+        div.className = `log-${type}`;
+        div.textContent = msg;
+        this.logPanel.appendChild(div);
+        this.logPanel.scrollTop = this.logPanel.scrollHeight;
+      }
+
+      /**
+       * Assert a condition and log the result
+       * @param {boolean} condition - Condition to check
+       * @param {string} msg - Assertion description
+       */
+      assert(condition, msg) {
+        if (condition) {
+          this.log(`  ✓ ${msg}`, 'pass');
+          this.assertPassed++;
+        } else {
+          this.log(`  ✗ ${msg}`, 'fail');
+          this.assertFailed++;
+        }
+      }
+
+      /**
+       * Draw test name and phase overlay in the top-left corner of the canvas
+       */
+      drawOverlay() {
+        const ctx = this.ctx;
+        ctx.fillStyle = 'rgba(0, 0, 0, 0.6)';
+        ctx.fillRect(6, 6, 440, 54);
+        drawText(ctx, this.currentTestName, 12, 26, '#ffffff', 'bold 13px monospace', 'left');
+        drawText(ctx, this.currentPhase,    12, 48, '#aaaaaa', '12px monospace',       'left');
+      }
+
+      /**
+       * Pause execution for a given number of milliseconds
+       * @param {number} ms - Duration in ms
+       * @returns {Promise<void>}
+       */
+      wait(ms) {
+        return new Promise(resolve => setTimeout(resolve, ms));
+      }
+
+      // ─────────────────────────────────────────────────────────────────────────
+      // TEST 1 — Missile joueur détruit un ennemi
+      // ─────────────────────────────────────────────────────────────────────────
+
+      /**
+       * Run test 1: a player missile must destroy an enemy
+       * Assertions:
+       *   ✓ enemy is removed from the grid
+       *   ✓ score equals exactly 20
+       *   ✓ missile is null after impact
+       * @returns {Promise<{name: string, passed: boolean}>}
+       */
+      runTest1() {
+        this.log('═══ TEST 1 : Missile joueur détruit un ennemi ═══', 'title');
+        this.currentTestName = 'TEST 1 — Missile joueur détruit un ennemi';
+        this.currentPhase = 'Phase : missile en approche...';
+
+        const ctx = this.ctx;
+        const W = 800, H = 600;
+
+        // Setup: player centered, single yellow enemy (type 2, 20pts) at y=80 (top area)
+        const player = new Player(W, H);
+        const grid = new EnemyGrid(W, H);
+        const enemyX = player.x + player.width / 2 - 12; // center enemy on player x-axis
+        grid.enemies = [new Enemy(enemyX, 80, 2)];
+        grid.speed = 0;
+
+        const MISSILE_SPEED = 3; // slow down for visibility (vs 8 in game)
+
+        let score = 0;
+        let impactOccurred = false;
+        let flashFrames = 0;
+
+        // Fire missile immediately
+        player.shoot();
+
+        this.log('  Setup  : 1 ennemi jaune (type 2, 20 pts) à y=80, joueur centré', 'info');
+        this.log('  Action : tir automatique au démarrage', 'info');
+
+        return new Promise(resolve => {
+          let done = false;
+
+          const loop = () => {
+            if (done) return;
+
+            // --- Clear ---
+            clearCanvas(ctx, W, H);
+
+            // --- Green flash overlay (drawn under game objects) ---
+            if (impactOccurred && flashFrames > 0) {
+              ctx.fillStyle = 'rgba(0, 255, 80, 0.30)';
+              ctx.fillRect(0, 0, W, H);
+            }
+
+            // --- Advance missile & collision detection ---
+            if (!impactOccurred) {
+              // Move missile manually at reduced speed for visibility
+              if (player.missile !== null) {
+                player.missile.y -= MISSILE_SPEED;
+                if (player.missile.y + player.missileHeight < 0) {
+                  player.removeMissile();
+                }
+              }
+
+              // Check player missile vs enemies
+              if (player.missile !== null && grid.enemies.length > 0) {
+                const mb = player.getMissileBounds();
+                for (let i = grid.enemies.length - 1; i >= 0; i--) {
+                  if (checkCollision(mb, grid.enemies[i].getBounds())) {
+                    score += grid.enemies[i].points;
+                    grid.removeEnemy(grid.enemies[i]);
+                    player.removeMissile();
+                    impactOccurred = true;
+                    flashFrames = 60;
+                    this.currentPhase = 'Phase : impact !';
+                    this.log('  Impact détecté !', 'info');
+                    break;
+                  }
+                }
+              }
+            }
+
+            // Decrement flash counter
+            if (flashFrames > 0) flashFrames--;
+
+            // --- Draw game objects ---
+            grid.draw(ctx);
+            player.draw(ctx);
+            this.drawOverlay();
+
+            // --- Finish after flash completes ---
+            if (impactOccurred && flashFrames === 0 && !done) {
+              done = true;
+              this.assert(grid.enemies.length === 0, "L'ennemi est retiré de la grille");
+              this.assert(score === 20, `Le score vaut exactement 20 (obtenu : ${score})`);
+              this.assert(player.missile === null, 'Le missile est null après impact');
+              const allPassed = grid.enemies.length === 0 && score === 20 && player.missile === null;
+              resolve({ name: 'TEST 1', passed: allPassed });
+              return;
+            }
+
+            requestAnimationFrame(loop);
+          };
+
+          requestAnimationFrame(loop);
+        });
+      }
+
+      // ─────────────────────────────────────────────────────────────────────────
+      // TEST 2 — Envahisseur atteint la ligne joueur → Game Over
+      // ─────────────────────────────────────────────────────────────────────────
+
+      /**
+       * Run test 2: an enemy reaching the player line must trigger game over
+       * Assertions:
+       *   ✓ game over condition is triggered
+       *   ✓ enemy position confirms it reached the player line
+       * @returns {Promise<{name: string, passed: boolean}>}
+       */
+      runTest2() {
+        this.log('═══ TEST 2 : Envahisseur atteint la ligne joueur → Game Over ═══', 'title');
+        this.currentTestName = 'TEST 2 — Envahisseur atteint la ligne joueur';
+        this.currentPhase = 'Phase : ennemi descend...';
+
+        const ctx = this.ctx;
+        const W = 800, H = 600;
+
+        // Setup: player centered, single red enemy (type 1) placed 350px above player
+        const player = new Player(W, H);
+        const grid = new EnemyGrid(W, H);
+        const startY = player.y - 350;
+        const enemy = new Enemy(W / 2 - 12, startY, 1);
+        grid.enemies = [enemy];
+        grid.speed = 0;
+
+        const ENEMY_SPEED = 2; // slow down for visibility (vs 4 in plan)
+
+        this.log(`  Setup  : 1 ennemi rouge (type 1) à y=${startY} (playerY=${player.y})`, 'info');
+        this.log('  Action : ennemi descend de 2px/frame', 'info');
+
+        let gameOverTriggered = false;
+        let enemyFinalBottom = 0;
+        let flashFrames = 0;
+
+        return new Promise(resolve => {
+          let done = false;
+
+          const loop = () => {
+            if (done) return;
+
+            // --- Clear ---
+            clearCanvas(ctx, W, H);
+
+            // --- Move enemy down each frame ---
+            if (!gameOverTriggered && grid.enemies.length > 0) {
+              grid.enemies[0].y += ENEMY_SPEED;
+            }
+
+            // --- Check game over condition ---
+            if (!gameOverTriggered && grid.checkEnemiesReachedBottom(player.y)) {
+              gameOverTriggered = true;
+              enemyFinalBottom = grid.enemies[0].y + grid.enemies[0].height;
+              flashFrames = 90;
+              this.currentPhase = 'Phase : GAME OVER !';
+              this.log('  Condition Game Over déclenchée !', 'info');
+            }
+
+            // Decrement flash counter
+            if (flashFrames > 0) flashFrames--;
+
+            // --- Draw game objects ---
+            grid.draw(ctx);
+            player.draw(ctx);
+
+            // --- Red flash overlay + GAME OVER text (drawn over game objects) ---
+            if (gameOverTriggered) {
+              ctx.fillStyle = 'rgba(200, 0, 0, 0.35)';
+              ctx.fillRect(0, 0, W, H);
+              drawText(ctx, 'GAME OVER', W / 2, H / 2, '#ff3333', 'bold 52px monospace', 'center');
+            }
+
+            this.drawOverlay();
+
+            // --- Finish after flash completes ---
+            if (gameOverTriggered && flashFrames === 0 && !done) {
+              done = true;
+              this.assert(
+                gameOverTriggered === true,
+                'La condition Game Over est déclenchée'
+              );
+              this.assert(
+                enemyFinalBottom >= player.y,
+                `Position ennemi confirme atteinte ligne joueur (bas ennemi=${enemyFinalBottom} ≥ playerY=${player.y})`
+              );
+              const allPassed = gameOverTriggered && (enemyFinalBottom >= player.y);
+              resolve({ name: 'TEST 2', passed: allPassed });
+              return;
+            }
+
+            requestAnimationFrame(loop);
+          };
+
+          requestAnimationFrame(loop);
+        });
+      }
+
+      // ─────────────────────────────────────────────────────────────────────────
+      // Run all tests
+      // ─────────────────────────────────────────────────────────────────────────
+
+      /**
+       * Run both tests sequentially and display the final summary
+       */
+      async runAll() {
+        this.log('Démarrage des tests visuels Space Invaders...', 'info');
+
+        const result1 = await this.runTest1();
+        await this.wait(1000);
+        const result2 = await this.runTest2();
+
+        const totalPassed = [result1, result2].filter(r => r.passed).length;
+        const totalTests = 2;
+        const summaryType = totalPassed === totalTests ? 'summary-pass' : 'summary-fail';
+        this.log('────────────────────────────────────────────', 'info');
+        this.log(`${totalPassed}/${totalTests} TESTS PASSÉS`, summaryType);
+      }
+    }
+
+    window.addEventListener('load', () => {
+      const runner = new VisualTestRunner();
+      runner.runAll();
+    });
+  </script>
+</body>
+</html>
